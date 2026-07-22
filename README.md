@@ -69,19 +69,29 @@ See [`docs/business-model.md`](docs/business-model.md) and
 ## Reference implementation (`:maturity :implemented`)
 
 Full itonami Actor pattern (per ADR-2607011000 / CLAUDE.md's Actors
-section): a real
+section): a REAL, compiled
 [`kotoba-lang/langgraph`](https://github.com/kotoba-lang/langgraph)
 `StateGraph`, with the Advisor and Governor as distinct graph nodes and
-human-in-the-loop interrupt/resume via checkpointing.
+GENUINE human-in-the-loop interrupt/resume via checkpointing (not a
+`:phase` flag on an already-finished run). An earlier version of this
+repo called a `graph/state-graph-builder` function that never existed
+anywhere in `kotoba-lang/langgraph`'s history, and `run-request!` was a
+literal stub (`{:stub true :reason "full langgraph.graph requires
+runtime binding"}`) that never touched a compiled graph at all — both
+went uncaught because no test exercised `nco-admin.actor`. That gap is
+now closed (`test/nco_admin/actor_test.cljc`).
 
 ```text
-:intake -> :advise -> :govern -> :decide -+-> :commit            (:ok? true)
-                                           +-> :request-approval   (:escalate? true, interrupt-before)
-                                           +-> :hold               (:hard? true)
+:intake -> :advise -> :govern -> :decide -+-> :commit                        (:hard? false, :escalate? false)
+                                           +-> :request-approval -> :commit    (:escalate? true, interrupt-before)
+                                           +-> :hold                          (:hard? true)
 ```
 
-- `src/nco_admin/store.cljc` — `Store` protocol + `MemStore`:
-  registered NCOs/units, committed administrative records, an append-only audit ledger.
+- `src/nco_admin/store.cljc` — `Store` protocol + `MemStore` +
+  `DatomicStore` (via [`kotoba-lang/langchain-store`](https://github.com/kotoba-lang/langchain-store),
+  no hand-rolled EDN-blob codec): registered NCOs/units, and the
+  append-only audit ledger (`add-record!`/`records`). Both backends
+  pass the same contract (`test/nco_admin/store_contract_test.cljc`).
 - `src/nco_admin/advisor.cljc` — `Advisor` protocol; `mock-advisor`
   (deterministic, default) proposes an administrative operation from a
   request; `llm-advisor` wraps a `langchain.model/ChatModel` — either
@@ -94,14 +104,21 @@ human-in-the-loop interrupt/resume via checkpointing.
   proposal touching deployment/command/weapons/classified operations) always
   route to `:hold`. Escalation invariants (readiness reports below threshold,
   leave requests during active-status periods, or low advisor confidence)
-  always route to `:request-approval` — an `interrupt-before` node that
-  the graph checkpoints and only resumes on explicit human approval
-  (`actor/approve!`).
+  always route to `:request-approval` — a genuine `interrupt-before` node
+  the compiled graph pauses at (checkpointed) and only resumes past on
+  explicit human approval (`actor/approve!`, which re-enters the SAME
+  compiled graph via its own `:request-approval -> :commit` edge).
 - `src/nco_admin/actor.cljc` — `build-graph`, `run-request!`,
-  `approve!`: the `langgraph.graph/state-graph` wiring itself.
+  `approve!`: the REAL `langgraph.graph/state-graph` wiring
+  (`state-graph`/`add-node`/`add-edge`/`add-conditional-edges`/
+  `compile-graph`). BOTH `:commit` and `:hold` durably append to the
+  real audit ledger (`store/add-record!`) — previously `add-record!`
+  was dead code from this actor's point of view, only ever called from
+  tests.
 
 ```bash
-clojure -M:test
+clojure -M:lint       # clj-kondo, 0 errors
+clojure -M:dev:test    # 20 tests / 70 assertions, green
 ```
 
 This is what backs this repo's `:maturity :implemented` entry in
