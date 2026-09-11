@@ -117,8 +117,8 @@ now closed (`test/nco_admin/actor_test.kotoba`).
   tests.
 
 ```bash
-clojure -M:lint       # clj-kondo, 0 errors
-clojure -M:dev:test    # 20 tests / 70 assertions, green
+kbb -M:lint       # clj-kondo, 0 errors
+kbb -M:dev:test    # 20 tests / 70 assertions, green
 ```
 
 This is what backs this repo's `:maturity :implemented` entry in
