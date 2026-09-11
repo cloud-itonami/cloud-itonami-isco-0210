@@ -16,7 +16,7 @@ We welcome contributions to cloud-itonami-isco-0210. This project is open source
 To run tests locally:
 
 ```bash
-clojure -M:test
+kbb -M:test
 ```
 
 ## Scope Boundaries
